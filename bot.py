@@ -389,97 +389,101 @@ def check_streams(timer: int, just_started: bool = False) -> int:
     since we're first grabbing a cache of srevious streams,
     which may have already been posted.
     """
-    timer += 1
+    try:
+        timer += 1
 
-    # Run this every 15 seconds or when script starts
-    if timer > 15 or just_started:
-        session = requests.session()
-        timer = 0
+        # Run this every 15 seconds or when script starts
+        if timer > 15 or just_started:
+            session = requests.session()
+            timer = 0
 
-        # Grab log file
-        if Settings.stream_alert_username is not None and Settings.stream_alert_password is not None:
-            session.auth = (Settings.stream_alert_username, Settings.stream_alert_password)
-            log_result = session.get(Settings.stream_alert_url)
+            # Grab log file
+            if Settings.stream_alert_username is not None and Settings.stream_alert_password is not None:
+                session.auth = (Settings.stream_alert_username, Settings.stream_alert_password)
+                log_result = session.get(Settings.stream_alert_url)
 
-            # if succsessful
-            if log_result.status_code == 200:
-                log_result_text = log_result.text
+                # if succsessful
+                if log_result.status_code == 200:
+                    log_result_text = log_result.text
 
-                # process line of log
-                for stream in _stream_all_regex.finditer(log_result_text):
-                    timestamp = stream.group(1)
-                    session_id = stream.group(2)
-                    # group 3 is fucked
-                    publish_or_delete = stream.group(4) if stream.group(6) is None else stream.group(6)
-                    stream_key = stream.group(5)
-                    ip_addr = stream.group(7)
+                    # process line of log
+                    for stream in _stream_all_regex.finditer(log_result_text):
+                        timestamp = stream.group(1)
+                        session_id = stream.group(2)
+                        # group 3 is fucked
+                        publish_or_delete = stream.group(4) if stream.group(6) is None else stream.group(6)
+                        stream_key = stream.group(5)
+                        ip_addr = stream.group(7)
 
-                    single_stream = {"timestamp": timestamp,
-                                     "stream_key": stream_key,
-                                     "ip_addr": ip_addr}
+                        single_stream = {"timestamp": timestamp,
+                                         "stream_key": stream_key,
+                                         "ip_addr": ip_addr}
 
-                    country = Utils.get_geoip(single_stream["ip_addr"]) or "N/A"
+                        country = Utils.get_geoip(single_stream["ip_addr"]) or "N/A"
 
-                    # process and log 'publish' line
-                    if publish_or_delete == "publish":
-                        print("[STREAM] new 'publish' log entry")
+                        # process and log 'publish' line
+                        if publish_or_delete == "publish":
+                            print("[STREAM] new 'publish' log entry")
 
-                        if session_id in Utils.past_publish:
-                            print("[STREAM] I already posted this: {0}".format(single_stream))
-                            print("[STREAM] Ignoring ^".format(single_stream))
-
-                        else:
-                            # brand new publish
-                            Utils.past_publish[session_id] = single_stream
-                            print(f"[STREAM] New unseen publish. Added entry to _past_publish, session_id={session_id}")
-
-                            # announce to mumble, make sure stream key isn't on the ignore list
-                            if not just_started and single_stream["stream_key"] not in Settings.ignored_stream_keys:
-
-                                mumble.my_channel().send_text_message(
-                                    f"""<strong style='color:{Settings.header_color}'><br/>Stream alert</strong>:
-                                    <span><ul style="list-style-type:none">
-                                    <li>Someone [{country}] started streaming.<br/>
-                                    <a href='rtmp://pooping.men/live/{single_stream["stream_key"]}'>rtmp://pooping.men/live/{single_stream["stream_key"]}</a><br/>
-                                    ({single_stream["timestamp"]})</li></ul></span>"""
-                                )
-                            else:
-                                # first time check_streams is ran the function
-                                # processes all past disconnect and publishes without posting them
-                                print("[STREAM] I've just started so I'm going to skip posting these to the Mumble.")
-
-                    #  process and log 'deleteStream'
-                    #  doesn't necessarily mean a stream was deleted. it's more 'disconnect'
-                    elif publish_or_delete == "deleteStream":
-                        # print("[STREAM] new 'deleteStream' log entry")
-
-                        if session_id in Utils.past_publish:
-                            if "deleted" in Utils.past_publish[session_id]:
-                                print("[STREAM] I already marked this stream as deleted: {0}".format(single_stream))
+                            if session_id in Utils.past_publish:
+                                print("[STREAM] I already posted this: {0}".format(single_stream))
+                                print("[STREAM] Ignoring ^".format(single_stream))
 
                             else:
-                                # new unseen deletion
-                                print("[STREAM] New unseen delete.")
+                                # brand new publish
+                                Utils.past_publish[session_id] = single_stream
+                                print(f"[STREAM] New unseen publish. Added entry to _past_publish, session_id={session_id}")
 
-                                if not just_started and Settings.announce_disconnects:  # announce disconnect to mumble (if enabled)
-                                    print(f"""[STREAM] a stream just ended, session_id:{single_stream["session_id"]}""")
+                                # announce to mumble, make sure stream key isn't on the ignore list
+                                if not just_started and single_stream["stream_key"] not in Settings.ignored_stream_keys:
 
                                     mumble.my_channel().send_text_message(
-                                        f"""<strong style='color:{Settings.header_color}'><br/>Stream ended</strong>:
-                                        <br/><span>Someone [{country}] stopped streaming</span>""")
+                                        f"""<strong style='color:{Settings.header_color}'><br/>Stream alert</strong>:
+                                        <span><ul style="list-style-type:none">
+                                        <li>Someone [{country}] started streaming.<br/>
+                                        <a href='rtmp://pooping.men/live/{single_stream["stream_key"]}'>rtmp://pooping.men/live/{single_stream["stream_key"]}</a><br/>
+                                        ({single_stream["timestamp"]})</li></ul></span>"""
+                                    )
+                                else:
+                                    # first time check_streams is ran the function
+                                    # processes all past disconnect and publishes without posting them
+                                    print("[STREAM] I've just started so I'm going to skip posting these to the Mumble.")
 
-                                Utils.past_publish[session_id]["deleted"] = True
+                        #  process and log 'deleteStream'
+                        #  doesn't necessarily mean a stream was deleted. it's more 'disconnect'
+                        elif publish_or_delete == "deleteStream":
+                            # print("[STREAM] new 'deleteStream' log entry")
 
+                            if session_id in Utils.past_publish:
+                                if "deleted" in Utils.past_publish[session_id]:
+                                    print("[STREAM] I already marked this stream as deleted: {0}".format(single_stream))
+
+                                else:
+                                    # new unseen deletion
+                                    print("[STREAM] New unseen delete.")
+
+                                    if not just_started and Settings.announce_disconnects:  # announce disconnect to mumble (if enabled)
+                                        print(f"""[STREAM] a stream just ended, session_id:{single_stream["session_id"]}""")
+
+                                        mumble.my_channel().send_text_message(
+                                            f"""<strong style='color:{Settings.header_color}'><br/>Stream ended</strong>:
+                                            <br/><span>Someone [{country}] stopped streaming</span>""")
+
+                                    Utils.past_publish[session_id]["deleted"] = True
+
+                            else:
+                                pass
+                                # print(f"[STREAM] I have never seen this stream ({session_id}), so I can't mark this as deleted.")
                         else:
-                            pass
-                            # print(f"[STREAM] I have never seen this stream ({session_id}), so I can't mark this as deleted.")
-                    else:
-                        # Something is wrong in the log if we got here
-                        print("[STREAM:WARN] new 'unknown' log entry: {}".format(single_stream))
+                            # Something is wrong in the log if we got here
+                            print("[STREAM:WARN] new 'unknown' log entry: {}".format(single_stream))
 
-                print("[STREAM] Log grab result: {}".format(log_result))
-            else:
-                pass
+                    print("[STREAM] Log grab result: {}".format(log_result))
+                else:
+                    pass
+
+    except Exception as e:
+        print("[STREAM:ERROR] An error occurred: {}".format(str(e)))
     return timer
 
 
